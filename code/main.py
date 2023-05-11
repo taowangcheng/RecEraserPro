@@ -40,13 +40,13 @@ if __name__ == '__main__':
         raise NotImplementedError(f"Haven't supported {config.dataloader_name} yet!")
     
     if config.model_name in register.MODELS.keys():
-        # if config.model_name == 'RecEraser':
-        #     cl_model = CL(config, dataloader)
-        #     cl_model = cl_model.to(config.device)
-        #     cl_model.train_test(dataloader)
-        #     init_users_embeddings = cl_model.init_users_embeddings.weight.detach().cpu().numpy()
-        #     init_items_embeddings = cl_model.init_items_embeddings.weight.detach().cpu().numpy()
-        #     dataloader.rebuild(init_users_embeddings, init_items_embeddings, config)
+        if config.model_name == 'RecEraser':
+            cl_model = CL(config, dataloader)
+            cl_model = cl_model.to(config.device)
+            cl_model.train_test(dataloader)
+            init_users_embeddings = cl_model.init_users_embeddings.weight.detach().cpu().numpy()
+            init_items_embeddings = cl_model.init_items_embeddings.weight.detach().cpu().numpy()
+            dataloader.rebuild(init_users_embeddings, init_items_embeddings, config)
         model = register.MODELS[config.model_name](config, dataloader)
     else:  # args.model == 'other models'
         raise NotImplementedError(f"Haven't supported {config.model_name} yet!")

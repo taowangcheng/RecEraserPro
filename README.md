@@ -30,5 +30,5 @@ python main.py --dataset="ml-1m" --dataloader="spilit" --model="RecEraser" --dat
 
 run RecEraserLightGCN with CL on **ml-1m** dataset:
 ```python
-python main.py --dataset="ml-1m" --dataloader="spilit" --model="RecEraser" --data_partition=True --topks="[10,20,50]" --embedding_size=64 --layers=3 --seed=2020 --lr=0.001 --decay=1e-3 --train_batch_size=1024 --test_batch_size=1024 --epochs=1000 --attention_epochs=1000 --max_iters=15
+python main.py --dataset="ml-1m" --dataloader="spilit" --model="RecEraser" --data_partition=True --topks="[10,20,50]" --embedding_size=64 --layers=3 --seed=2020 --lr=0.001 --decay=1e-3 --train_batch_size=1024 --test_batch_size=1024 --epochs=1000 --attention_epochs=1000
 ```

@@ -201,7 +201,7 @@ class NormalDataLoader(BasicDataLoader):
         try:
             norm_adj = sp.load_npz(self.dataset_path + '/s_pre_adj_mat.npz')
         except :
-            norm_adj = self.create_norm_adj(self.R, self.n_users + self.m_items)
+            adj, norm_adj = self.create_norm_adj(self.R, self.n_users + self.m_items)
             sp.save_npz(self.dataset_path + '/s_pre_adj_mat.npz', norm_adj)
 
         if self.a_hat_split == True:
@@ -234,7 +234,7 @@ class NormalDataLoader(BasicDataLoader):
         norm_adj = d_mat.dot(adj_mat)
         norm_adj = norm_adj.dot(d_mat)
         norm_adj = norm_adj.tocsr()
-        return norm_adj
+        return adj_mat, norm_adj
     
     def split_a_hat(self, a):
         a_fold = []
@@ -345,7 +345,7 @@ class SpilitDataLoader(NormalDataLoader):
                 for u in self.C[id_shard]:
                     for i in self.C[id_shard][u]:
                         R[u, i] = 1.
-                norm_adj = self.create_norm_adj(R, self.n_users + self.m_items)
+                adj, norm_adj = self.create_norm_adj(R, self.n_users + self.m_items)
                 sp.save_npz(adj_path, norm_adj)
 
             if self.a_hat_split == True:
@@ -360,24 +360,27 @@ class SpilitDataLoader(NormalDataLoader):
         return norm_adjs
     
     def get_norm_adjs_cl(self, train_dicts):
+        adjs = []
         norm_adjs = []
         for id_shard in range(self.num_shards):
             R = sp.dok_matrix((self.n_users, self.m_items), dtype=np.float32)
             for u in train_dicts[id_shard]:
                 for i in train_dicts[id_shard][u]:
                     R[u, i] = 1.
-            norm_adj = self.create_norm_adj(R, self.n_users + self.m_items)
+            adj, norm_adj = self.create_norm_adj(R, self.n_users + self.m_items)
 
             if self.a_hat_split == True:
                 norm_adj = self.split_a_hat(norm_adj)
             else:
                 norm_adj = self.convert_sp_mat_to_sp_tensor(norm_adj)
                 norm_adj = norm_adj.coalesce().to(self.device)
+            
+            adjs.append(adj)
             norm_adjs.append(norm_adj)
-        return norm_adjs
+        return adjs, norm_adjs
 
     def __get_sub_dataloaders_cl(self, config):
-        norm_adjs = self.get_norm_adjs_cl(self.C)
+        adjs, norm_adjs = self.get_norm_adjs_cl(self.C)
         self.sub_dataloaders = []
         for id_shard in range(self.num_shards):
             sub_dataloader = BasicDataLoader(config)

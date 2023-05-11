@@ -707,6 +707,7 @@ class CL(nn.Module):
         self.dataloader = dataloader
         self.pretrain_users_embedding = dataloader.pretrain_users_embedding
         self.pretrain_items_embedding = dataloader.pretrain_items_embedding
+        # 不知道为什么, 预训练嵌入的商品数多了一个出来
         self.pretrain_items_embedding = self.pretrain_items_embedding[:-1]
 
         self.__init_weight()
@@ -734,9 +735,10 @@ class CL(nn.Module):
             out_users_embeddings_all.append(out_users_embeddings)
             out_items_embeddings_all.append(out_items_embeddings)
         return out_users_embeddings_all, out_items_embeddings_all
-    
-    def cl_loss(self, users, items, norm_adjs):
-        init_users_embeddings = self.init_users_embeddings.weight
+
+
+    def cl_loss1(self, users, items, norm_adjs):
+        init_users_embeddings = self.init_users_embeddings.weight  # 底层应该是一致的?
         init_items_embeddings = self.init_items_embeddings.weight
         out_users_embeddings_all, out_items_embeddings_all = self.propagation(init_users_embeddings, init_items_embeddings, norm_adjs)
 
@@ -767,8 +769,44 @@ class CL(nn.Module):
         
         return cl_loss
 
-    def step(self, users, items, norm_adjs):
-        loss = self.cl_loss(users, items, norm_adjs)
+    
+    def cl_loss2(self, users, items, adjs, max_deg, out_nodes_embeddings, norm_out_nodes_embeddings):
+        items = items + self.n_users
+        nodes = torch.cat([users, items])
+
+        nodes_embeddings = out_nodes_embeddings[nodes]
+        norm_nodes_embeddings = norm_out_nodes_embeddings[nodes]
+        
+        pull = []
+        push = []
+        for node in nodes:
+            norm_node_embedding = norm_nodes_embeddings[node]
+
+            neighbors = torch.where(adjs[max_deg[node]][node].bool())
+            avg_neighbors_embedding = torch.mean(nodes_embeddings[neighbors], dim=0)
+            norm_avg_neighbors_embedding = nn.functional.normalize(avg_neighbors_embedding, p=2, dim=0)
+            pull.append(torch.exp(torch.sum(norm_node_embedding * norm_avg_neighbors_embedding) / self.temp))
+
+            diff_nodes = torch.where(max_deg != max_deg[node])[0]
+            norm_diff_nodes_embeddings = norm_nodes_embeddings[diff_nodes]
+            push.append(torch.sum(torch.exp(torch.sum(norm_node_embedding * norm_diff_nodes_embeddings, dim=1) / self.temp)))
+
+        pull = torch.Tensor(pull)
+        push = torch.Tensor(push)
+        push = pull + push
+        cl_loss = -torch.sum(torch.log(pull / push))
+        return cl_loss
+
+    def step1(self, users, items, norm_adjs):
+        loss = self.cl_loss1(users, items, norm_adjs)
+        # 优化模型参数
+        self.opt.zero_grad()
+        loss.backward()
+        self.opt.step()
+        return loss.cpu().item()  # 返回loss的值
+    
+    def step2(self, users, items, adjs, max_deg, out_nodes_embeddings, norm_out_nodes_embeddings):
+        loss = self.cl_loss2(users, items, adjs, max_deg, out_nodes_embeddings, norm_out_nodes_embeddings)
         # 优化模型参数
         self.opt.zero_grad()
         loss.backward()
@@ -778,7 +816,13 @@ class CL(nn.Module):
     def loss(self):
         self.opt = optim.Adam(self.parameters(), lr=self.lr) 
 
+
     def train_test(self, dataloader: BasicDataLoader):
+        self.train_test1(dataloader)
+
+    def train_test1(self, dataloader: BasicDataLoader):
+        self.step = self.step1
+
         self.epochs = 10
         self.loss()
         sample = dataloader.sample2
@@ -789,8 +833,8 @@ class CL(nn.Module):
 
             in_users_embeddings = self.init_users_embeddings.weight.detach().cpu().numpy()
             in_items_embeddings = self.init_items_embeddings.weight.detach().cpu().numpy()
-            sub_train_dicts: list[dict] = self.dataloader.interaction_based_partition(in_users_embeddings, in_items_embeddings)
-            norm_adjs = self.dataloader.get_norm_adjs_cl(sub_train_dicts)
+            sub_train_dicts, _, _ = self.dataloader.interaction_based_partition(in_users_embeddings, in_items_embeddings)
+            adjs, norm_adjs = self.dataloader.get_norm_adjs_cl(sub_train_dicts)
 
             sum_loss = 0.0
             for idx in range(n_batch):
@@ -802,6 +846,56 @@ class CL(nn.Module):
                 users = torch.Tensor(users).long().to(self.device)
                 items = torch.Tensor(items).long().to(self.device)
                 batch_loss = self.step(users, items, norm_adjs)
+                sum_loss += batch_loss
+                if self.tensorboard_writer:
+                    # python3中/不会下取整
+                    self.tensorboard_writer.add_scalar(f'BPRLoss/BPR', batch_loss, epoch * n_batch + idx + 1)
+            average_loss = sum_loss / n_batch
+            time_loss = time() - start
+            train_info = f"CL_MODEL: EPOCH[{epoch + 1}/{self.epochs}] loss{average_loss:.3f}-time{time_loss:.3f}s"
+            print(train_info)
+    
+    def train_test2(self, dataloader: BasicDataLoader):
+        self.step = self.step2
+
+        self.epochs = 10
+        self.loss()
+        sample = dataloader.sample2
+        n_batch = dataloader.train_size // dataloader.train_batch_size + 1
+        for epoch in range(self.epochs):
+            self.train()
+            start = time()
+
+            in_users_embeddings = self.init_users_embeddings.weight.detach().cpu().numpy()
+            in_items_embeddings = self.init_items_embeddings.weight.detach().cpu().numpy()
+            sub_train_dicts, _, _ = self.dataloader.interaction_based_partition(in_users_embeddings, in_items_embeddings)
+            adjs, norm_adjs = self.dataloader.get_norm_adjs_cl(sub_train_dicts)
+
+            # 划分完后的预处理
+            for id in range(len(adjs)):
+                adjs[id] = adjs[id].sum(dim=1)
+            degs = torch.stack(adjs, dim=1)
+            max_deg = torch.argmax(degs, dim=1)
+            init_users_embeddings = self.init_users_embeddings.weight
+            init_items_embeddings = self.init_items_embeddings.weight
+            out_users_embeddings_all, out_items_embeddings_all = self.propagation(init_users_embeddings, init_items_embeddings, norm_adjs)
+            out_nodes_embeddings_all = [torch.cat([out_users_embeddings, out_items_embeddings]) for out_users_embeddings, out_items_embeddings in zip(out_users_embeddings_all, out_items_embeddings_all)]
+            out_nodes_embeddings = []
+            for node in range(self.n_users + self.m_items):
+                out_nodes_embeddings.append(out_nodes_embeddings_all[max_deg[node]][node])
+            out_nodes_embeddings = torch.stack(out_nodes_embeddings, dim=0)
+            norm_out_nodes_embeddings = nn.functional.normalize(out_nodes_embeddings, p=2, dim=1)
+
+            sum_loss = 0.0
+            for idx in range(n_batch):
+                users, pos_items, neg_items = sample()
+                items = set()
+                items = items.union(pos_items)
+                items = items.union(neg_items)
+                items = list(items)
+                users = torch.Tensor(users).long().to(self.device)
+                items = torch.Tensor(items).long().to(self.device)
+                batch_loss = self.step2(users, items, adjs, max_deg, out_nodes_embeddings, norm_out_nodes_embeddings)
                 sum_loss += batch_loss
                 if self.tensorboard_writer:
                     # python3中/不会下取整
