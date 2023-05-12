@@ -375,6 +375,9 @@ class SpilitDataLoader(NormalDataLoader):
                 norm_adj = self.convert_sp_mat_to_sp_tensor(norm_adj)
                 norm_adj = norm_adj.coalesce().to(self.device)
             
+            adj = self.convert_sp_mat_to_sp_tensor(adj)
+            adj = adj.coalesce().to(self.device).to_dense()
+
             adjs.append(adj)
             norm_adjs.append(norm_adj)
         return adjs, norm_adjs
