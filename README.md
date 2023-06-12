@@ -1,34 +1,30 @@
-## LightGCN-pytorch
+# RecEraser
 
-This is the Pytorch implementation for SIGIR 2020 paper:
+This is my implementation of the paper: 
 
-> SIGIR 2020. Xiangnan He, Kuan Deng ,Xiang Wang, Yan Li, Yongdong Zhang, Meng Wang(2020). LightGCN: Simplifying and Powering Graph Convolution Network for Recommendation, [Paper in arXiv](https://arxiv.org/abs/2002.02126).
+*Chong Chen, Fei Sun, Min Zhang and Bolin Ding. 2022. [Recommendation Unlearning.](https://arxiv.org/pdf/2201.06820.pdf) 
+In TheWebConf'22.*
 
-Author: Prof. Xiangnan He (staff.ustc.edu.cn/~hexn/)
+# Hype-Parameters
 
-I just made a little modification for myself on the basis of https://github.com/gusye1234/LightGCN-PyTorch, for my own reading and reuse.
+The hype-parameters for base models are:
 
+```
+yelp2018:
+BPR: adagrade	lr=0.05	reg=0.01	batch=256
+WMF: adagrade	lr=0.05	reg=0.01	batch=256	weight=0.05	drop=0.7
+LightGCN: adam	lr=0.001	reg=1e-4	batch=1024
 
-(Also see Tensorflow [implementation](https://github.com/kuandeng/LightGCN))
+ml-1m:
+BPR: adagrade	lr=0.05	reg=0.01	batch=256
+WMF: adagrade	lr=0.05	reg=0.01	batch=256	weight=0.2	drop=0.7
+LightGCN: adam lr=0.001	reg=1e-3	batch=1024
 
-(Also see PyTorch [implementation](https://github.com/gusye1234/LightGCN-PyTorch))
+ml-10m:
 
-The output of my model, I checked, is exactly the same as them.
-
-## An example to run a 3-layer LightGCN
-
-run LightGCN on **Gowalla** dataset:
-
-```python
-python main.py --decay=1e-4 --lr=0.001 --layers=3 --seed=2020 --dataset="gowalla" --topks="[20]" --embedding_size=64 --dataloader=normal
+BPR: adagrade	lr=0.05	reg=0.001	batch=256
+WMF: adagrade	lr=0.05	reg=0.01	batch=256	weight=0.2	drop=0.7
+LightGCN: adam lr=0.001	reg=1e-3	batch=1024
 ```
 
-run RecEraserLightGCN without CL on **ml-1m** dataset:
-```python
-python main.py --dataset="ml-1m" --dataloader="spilit" --model="RecEraser" --data_partition=True --topks="[10,20,50]" --embedding_size=64 --layers=3 --seed=2020 --lr=0.001 --decay=1e-3 --train_batch_size=1024 --test_batch_size=1024 --epochs=1000 --attention_epochs=1000
-```
 
-run RecEraserLightGCN with CL on **ml-1m** dataset:
-```python
-python main.py --dataset="ml-1m" --dataloader="spilit" --model="RecEraser" --data_partition=True --topks="[10,20,50]" --embedding_size=64 --layers=3 --seed=2020 --lr=0.001 --decay=1e-3 --train_batch_size=1024 --test_batch_size=1024 --epochs=1000 --attention_epochs=1000
-```
